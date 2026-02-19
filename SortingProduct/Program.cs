@@ -20,10 +20,21 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "SortingProduct API", Version = "v1" });
 });
 
+// Railway: set env var ConnectionStrings__Db.
+// Locally: use appsettings.Development.json.
+var connectionString = builder.Configuration.GetConnectionString("Db");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    Console.WriteLine("[Startup] Connection string 'Db' is empty. Set environment variable ConnectionStrings__Db.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("Db")
-        ?? throw new InvalidOperationException("Connection string 'Db' was not found.");
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        // still register; will fail only when used
+        return;
+    }
 
     options.UseNpgsql(connectionString);
 });
@@ -46,15 +57,32 @@ builder.Services.AddHostedService<ProductGroupingHostedService>();
 var app = builder.Build();
 
 // Auto-apply migrations on startup (for easy hosting like Railway).
-// If DB is not reachable, app will fail fast with a clear error.
-using (var scope = app.Services.CreateScope())
+// We do small retry because managed DB can be not ready for a few seconds.
+if (!string.IsNullOrWhiteSpace(connectionString))
 {
+    using var scope = app.Services.CreateScope();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Migrations");
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
     logger.LogInformation("Applying EF Core migrations...");
-    dbContext.Database.Migrate();
-    logger.LogInformation("Migrations applied.");
+
+    var attempt = 0;
+    while (true)
+    {
+        try
+        {
+            dbContext.Database.Migrate();
+            logger.LogInformation("Migrations applied.");
+            break;
+        }
+        catch (Exception ex) when (attempt < 10)
+        {
+            attempt++;
+            var delaySeconds = Math.Min(30, attempt * 2);
+            logger.LogWarning(ex, "Migration attempt {Attempt} failed. Waiting {DelaySeconds}s...", attempt, delaySeconds);
+            Thread.Sleep(TimeSpan.FromSeconds(delaySeconds));
+        }
+    }
 }
 
 // Simple request logging
