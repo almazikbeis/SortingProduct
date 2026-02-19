@@ -93,12 +93,9 @@ app.Use(async (httpContext, next) =>
     await next();
 });
 
-var enableSwagger = app.Environment.IsDevelopment() || string.Equals(builder.Configuration["ENABLE_SWAGGER"], "true", StringComparison.OrdinalIgnoreCase);
-if (enableSwagger)
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// For demo purposes: always enable Swagger (including Production on Railway).
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
