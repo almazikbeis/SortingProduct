@@ -93,7 +93,8 @@ app.Use(async (httpContext, next) =>
     await next();
 });
 
-if (app.Environment.IsDevelopment())
+var enableSwagger = app.Environment.IsDevelopment() || string.Equals(builder.Configuration["ENABLE_SWAGGER"], "true", StringComparison.OrdinalIgnoreCase);
+if (enableSwagger)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
